@@ -1,96 +1,96 @@
-# OKE no Oracle Always Free com Terraform
+# OKE on Oracle Always Free with Terraform
 
-Provisiona um cluster Kubernetes gerenciado (OKE Basic) na Oracle Cloud usando
-**100% recursos do Always Free Tier**:
+Provisions a managed Kubernetes cluster (OKE Basic) on Oracle Cloud using
+**100% Always Free Tier resources**:
 
-- Control plane OKE Basic: **grátis**
-- 2 worker nodes ARM (VM.Standard.A1.Flex) com 2 OCPU + 12 GB cada = **4 OCPU + 24 GB total**
-- VCN, subnets, NSGs, IGW, NAT GW, Service GW: grátis
-- Block storage (boot volumes 2 × 50 GB): dentro dos 200 GB grátis
-- 1 Flexible Load Balancer 10 Mbps: grátis (criado sob demanda via Service do tipo LoadBalancer)
+- OKE Basic control plane: **free**
+- 2 ARM worker nodes (VM.Standard.A1.Flex) with 2 OCPU + 12 GB each = **4 OCPU + 24 GB total**
+- VCN, subnets, NSGs, IGW, NAT GW, Service GW: free
+- Block storage (boot volumes 2 × 50 GB): within the 200 GB free allowance
+- 1 Flexible Load Balancer at 10 Mbps: free (created on demand via a Service of type LoadBalancer)
 
-## Pré-requisitos
+## Prerequisites
 
-1. Conta na Oracle Cloud (cloud.oracle.com)
-2. Terraform >= 1.5 instalado
-3. OCI CLI instalado e configurado:
+1. Oracle Cloud account (cloud.oracle.com)
+2. Terraform >= 1.5 installed
+3. OCI CLI installed and configured:
    ```bash
-   brew install oci-cli   # ou outro método
-   oci setup config        # gera ~/.oci/config e o par de chaves
+   brew install oci-cli   # or another method
+   oci setup config        # generates ~/.oci/config and the key pair
    ```
-4. `kubectl` instalado
+4. `kubectl` installed
 
 ## Setup
 
 ```bash
-# 1. Configure suas variáveis
+# 1. Configure your variables
 cp terraform.tfvars.example terraform.tfvars
-# Edite terraform.tfvars com seus OCIDs
+# Edit terraform.tfvars with your OCIDs
 
-# 2. Provisione
+# 2. Provision
 terraform init
 terraform plan
 terraform apply
 
-# 3. Exporte o kubeconfig
+# 3. Export the kubeconfig
 export KUBECONFIG=$(terraform output -raw kubeconfig_path)
 kubectl get nodes
 ```
 
-## Encontrar seus OCIDs
+## Finding your OCIDs
 
-- **Tenancy OCID**: Console > Profile (canto superior direito) > Tenancy: <nome> > copiar OCID
-- **Compartment OCID**: Identity & Security > Compartments > escolha o seu (ou use o tenancy OCID para a raiz)
+- **Tenancy OCID**: Console > Profile (top-right corner) > Tenancy: <name> > copy OCID
+- **Compartment OCID**: Identity & Security > Compartments > pick yours (or use the tenancy OCID for the root)
 
-## Versões do Kubernetes disponíveis
+## Available Kubernetes versions
 
 ```bash
 oci ce cluster-options get --cluster-option-id all \
   --query 'data."kubernetes-versions"' --raw-output
 ```
 
-Atualize `kubernetes_version` no `terraform.tfvars` para a mais recente estável.
+Update `kubernetes_version` in `terraform.tfvars` to the latest stable release.
 
-## State remoto (opcional, recomendado)
+## Remote state (optional, recommended)
 
-O Object Storage da OCI é S3-compatível e está no Always Free (até 20 GB):
+OCI Object Storage is S3-compatible and is part of Always Free (up to 20 GB):
 
 ```bash
-# Cria o bucket
+# Create the bucket
 oci os bucket create --name tf-states --versioning Enabled \
   --compartment-id $COMPARTMENT_OCID
 
-# No console: User Settings > Customer Secret Keys > Generate
-# Salve em ~/.aws/credentials como [default]
+# In the console: User Settings > Customer Secret Keys > Generate
+# Save it under ~/.aws/credentials as [default]
 ```
 
-Descomente o bloco `backend "s3"` em `versions.tf`, substitua `<NAMESPACE>` pelo
-seu Object Storage namespace (`oci os ns get`), e rode `terraform init -migrate-state`.
+Uncomment the `backend "s3"` block in `versions.tf`, replace `<NAMESPACE>` with
+your Object Storage namespace (`oci os ns get`), and run `terraform init -migrate-state`.
 
-## Pegadinhas
+## Gotchas
 
-- **"Out of capacity" no shape A1.Flex**: tente outra região (us-ashburn-1 e
-  us-phoenix-1 costumam ter mais capacidade que sa-saopaulo-1). Se persistir,
-  considere upgrade pra Pay As You Go — os limites Always Free continuam grátis,
-  mas os "guardrails" somem (cuidado pra não estourar).
-- **Idle reclamation**: VMs com CPU 95p < 20% por 7 dias são removidas. Mantenha
-  algum workload ativo (qualquer pod já resolve).
-- **Enhanced vs Basic**: garante que `type = "BASIC_CLUSTER"` no recurso do cluster.
-  Enhanced custa ~US$ 73/mês.
-- **Versão do K8s**: a regex em `oci_core_images.oke_arm` busca imagens com nome
-  matching a versão. Se mudar a versão, confirme que existe imagem aarch64-OKE
-  pra ela com `oci compute image list ...`.
+- **"Out of capacity" on the A1.Flex shape**: try another region (us-ashburn-1 and
+  us-phoenix-1 usually have more capacity than sa-saopaulo-1). If it persists,
+  consider upgrading to Pay As You Go — the Always Free limits remain free,
+  but the "guardrails" disappear (be careful not to overrun them).
+- **Idle reclamation**: VMs with 95p CPU < 20% for 7 days are removed. Keep
+  some workload active (any pod is enough).
+- **Enhanced vs Basic**: make sure `type = "BASIC_CLUSTER"` on the cluster resource.
+  Enhanced costs ~US$ 73/month.
+- **K8s version**: the regex in `oci_core_images.oke_arm` looks for images whose name
+  matches the version. If you change the version, confirm there is an aarch64-OKE
+  image for it via `oci compute image list ...`.
 
-## Limpeza
+## Cleanup
 
 ```bash
 terraform destroy
 ```
 
-## Próximos passos
+## Next steps
 
-- Instalar `cert-manager` pra TLS automático (Let's Encrypt)
-- Instalar `external-dns` pra criar registros DNS automaticamente
-- Configurar `ingress-nginx` ou usar o LB nativo via Service `type: LoadBalancer`
-- Build de imagens ARM64: `docker buildx build --platform linux/arm64 ...`
-- Push pro OCIR (Oracle Container Registry, 10 GB grátis)
+- Install `cert-manager` for automatic TLS (Let's Encrypt)
+- Install `external-dns` to create DNS records automatically
+- Configure `ingress-nginx` or use the native LB through a Service `type: LoadBalancer`
+- Build ARM64 images: `docker buildx build --platform linux/arm64 ...`
+- Push to OCIR (Oracle Container Registry, 10 GB free)
