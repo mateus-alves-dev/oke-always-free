@@ -9,9 +9,12 @@ data "oci_core_images" "oke_arm" {
   sort_by          = "TIMECREATED"
   sort_order       = "DESC"
 
+  # Formato do nome das OKE images (ARM):
+  #   Oracle-Linux-<versão OL>-aarch64-<data da imagem base>-OKE-<versão k8s SEM "v">-<build>
+  # Ex.: Oracle-Linux-8.10-aarch64-2026.08.14-0-OKE-1.36.1-1699
   filter {
     name   = "display_name"
-    values = ["^Oracle-Linux-[0-9.]+-aarch64-OKE-${replace(var.kubernetes_version, ".", "\\.")}-[0-9]+.*$"]
+    values = ["^Oracle-Linux-[0-9.]+-aarch64(-[0-9.]+-[0-9]+)?-OKE-${replace(trimprefix(var.kubernetes_version, "v"), ".", "\\.")}-[0-9]+.*$"]
     regex  = true
   }
 }

@@ -17,7 +17,7 @@ variable "region" {
 variable "kubernetes_version" {
   description = "Versão do Kubernetes. Confirmar disponibilidade: oci ce cluster-options get --cluster-option-id all"
   type        = string
-  default     = "v1.30.1"
+  default     = "v1.36.1"
 }
 
 variable "cluster_name" {
@@ -29,7 +29,7 @@ variable "cluster_name" {
 variable "ssh_public_key_path" {
   description = "Caminho para a chave SSH pública usada nos worker nodes."
   type        = string
-  default     = "~/.ssh/id_rsa.pub"
+  default     = "~/.ssh/id_ed25519.pub"
 }
 
 variable "vcn_cidr" {

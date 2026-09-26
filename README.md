@@ -77,9 +77,14 @@ your Object Storage namespace (`oci os ns get`), and run `terraform init -migrat
   some workload active (any pod is enough).
 - **Enhanced vs Basic**: make sure `type = "BASIC_CLUSTER"` on the cluster resource.
   Enhanced costs ~US$ 73/month.
-- **K8s version**: the regex in `oci_core_images.oke_arm` looks for images whose name
-  matches the version. If you change the version, confirm there is an aarch64-OKE
-  image for it via `oci compute image list ...`.
+- **K8s version**: the regex in `oci_core_images.oke_arm` matches OKE ARM image names
+  such as `Oracle-Linux-8.10-aarch64-2026.08.14-0-OKE-1.36.1-1699` — note the base-image
+  date between `aarch64` and `OKE`, and that the image name has no `v` prefix. If you
+  change `kubernetes_version`, confirm a matching image exists:
+  ```bash
+  oci ce node-pool-options get --node-pool-option-id all \
+    --query 'data.sources[?contains("source-name", `aarch64-OKE`)].{name:"source-name", id:"image-id"}'
+  ```
 
 ## Cleanup
 

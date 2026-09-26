@@ -27,6 +27,10 @@ oci ce cluster-options get --cluster-option-id all \
 
 `terraform.tfvars` is user-local (OCIDs, region) and must not be committed — only `terraform.tfvars.example` should be tracked.
 
+## Git
+
+Never commit or push unless the user explicitly asks for it in that message. `terraform.tfvars` and `kubeconfig` are gitignored and must stay out of version control.
+
 ## Architecture constraints (non-obvious, cost-critical)
 
 These are load-bearing decisions that keep the stack inside Always Free. Do not change them without the user's explicit say-so:
@@ -35,7 +39,7 @@ These are load-bearing decisions that keep the stack inside Always Free. Do not 
 - **Worker shape is `VM.Standard.A1.Flex` (ARM/aarch64), 2 nodes × 2 OCPU × 12 GB.** Total Always Free A1 budget is 4 OCPU + 24 GB — do not exceed. Container images therefore must be built for `linux/arm64`.
 - **Boot volumes: 2 × 50 GB**, sized to fit under the 200 GB Always Free block storage cap shared with anything else in the tenancy.
 - **Load balancer: 1 Flexible LB at 10 Mbps**, created on demand by a `Service type: LoadBalancer`. Don't provision a second one.
-- **Image lookup**: an `oci_core_images.oke_arm` data source filters images by a regex on the K8s version. When `kubernetes_version` changes, verify an `aarch64-OKE` image exists for the new version (`oci compute image list ...`) — the regex must match.
+- **Image lookup**: an `oci_core_images.oke_arm` data source filters images by a regex on the K8s version. OKE ARM image names look like `Oracle-Linux-8.10-aarch64-2026.08.14-0-OKE-1.36.1-1699` — base-image date between `aarch64` and `OKE`, and no `v` prefix on the K8s version. The regex must account for both. When `kubernetes_version` changes, verify a matching image exists via `oci ce node-pool-options get --node-pool-option-id all` (`data.sources`).
 - **A1.Flex capacity is region-dependent.** "Out of capacity" errors usually mean trying another region (us-ashburn-1, us-phoenix-1) before changing anything else.
 - **Idle reclamation**: nodes with 95p CPU < 20% for 7 days get reaped. Any running pod prevents this — relevant when scoping demos or test workloads.
 
