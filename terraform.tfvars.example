@@ -6,5 +6,9 @@ kubernetes_version  = "v1.36.1"
 cluster_name        = "oke-free"
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 
-# Restringir acesso ao API endpoint (default permite tudo):
-# api_allowed_cidrs = ["203.0.113.42/32"]
+# Substitua pelo seu IP público real (203.0.113.42 é apenas um exemplo).
+api_allowed_cidrs = ["203.0.113.42/32"]
+# O mesmo allowlist controla a API Kubernetes e as sessões do Bastion.
+
+# Destinatário dos alertas de gasto mensal em 1, 5 e 10 (moeda de cobrança da conta).
+billing_alert_email = "voce@exemplo.com"

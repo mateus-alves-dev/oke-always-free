@@ -10,9 +10,13 @@ terraform {
       source  = "hashicorp/local"
       version = ">= 2.4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 
-  # Remote state opcional via OCI Object Storage (S3-compat, Always Free até 20 GB).
+  # Remote state opcional via OCI Object Storage (S3-compat; compartilha a cota do bucket).
   # Para ativar:
   #   1. oci os bucket create --name tf-states --versioning Enabled --compartment-id $COMPARTMENT_OCID
   #   2. Console > User Settings > Customer Secret Keys > Generate; salvar em ~/.aws/credentials

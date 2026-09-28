@@ -2,21 +2,19 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
 
-data "oci_core_images" "oke_arm" {
-  compartment_id   = var.compartment_ocid
-  operating_system = "Oracle Linux"
-  shape            = "VM.Standard.A1.Flex"
-  sort_by          = "TIMECREATED"
-  sort_order       = "DESC"
+data "oci_containerengine_node_pool_option" "oke_arm" {
+  node_pool_option_id = "all"
+}
 
-  # Formato do nome das OKE images (ARM):
-  #   Oracle-Linux-<versão OL>-aarch64-<data da imagem base>-OKE-<versão k8s SEM "v">-<build>
-  # Ex.: Oracle-Linux-8.10-aarch64-2026.08.14-0-OKE-1.36.1-1699
-  filter {
-    name   = "display_name"
-    values = ["^Oracle-Linux-[0-9.]+-aarch64(-[0-9.]+-[0-9]+)?-OKE-${replace(trimprefix(var.kubernetes_version, "v"), ".", "\\.")}-[0-9]+.*$"]
-    regex  = true
+locals {
+  # As imagens OKE aparecem nas opções do node pool, mas nem sempre em core_images.
+  # Ex.: Oracle-Linux-9.8-aarch64-2026.08.14-0-OKE-1.36.1-1699
+  oke_arm_images = {
+    for source in data.oci_containerengine_node_pool_option.oke_arm.sources :
+    source.source_name => source.image_id
+    if length(regexall("^Oracle-Linux-[0-9.]+-aarch64-[0-9.]+-[0-9]+-OKE-${replace(trimprefix(var.kubernetes_version, "v"), ".", "\\.")}-[0-9]+$", source.source_name)) > 0
   }
+  latest_oke_arm_image_name = try(reverse(sort(keys(local.oke_arm_images)))[0], "")
 }
 
 resource "oci_containerengine_cluster" "this" {
@@ -65,7 +63,7 @@ resource "oci_containerengine_node_pool" "workers" {
 
   node_source_details {
     source_type             = "IMAGE"
-    image_id                = data.oci_core_images.oke_arm.images[0].id
+    image_id                = lookup(local.oke_arm_images, local.latest_oke_arm_image_name, "")
     boot_volume_size_in_gbs = var.boot_volume_size_gb
   }
 
@@ -89,4 +87,11 @@ resource "oci_containerengine_node_pool" "workers" {
   }
 
   ssh_public_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
+
+  lifecycle {
+    precondition {
+      condition     = length(local.oke_arm_images) > 0
+      error_message = "Nenhuma imagem OKE ARM corresponde à versão Kubernetes escolhida na região."
+    }
+  }
 }

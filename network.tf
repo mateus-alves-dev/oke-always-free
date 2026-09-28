@@ -66,6 +66,19 @@ resource "oci_core_route_table" "private" {
   }
 }
 
+# A subnet privada não herda a lista padrão da VCN (que permite SSH público).
+# As entradas necessárias aos workers e ao MySQL ficam nos respectivos NSGs.
+resource "oci_core_security_list" "private" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.this.id
+  display_name   = "${var.cluster_name}-sl-private"
+
+  egress_security_rules {
+    protocol    = "all"
+    destination = "0.0.0.0/0"
+  }
+}
+
 resource "oci_core_subnet" "public" {
   compartment_id             = var.compartment_ocid
   vcn_id                     = oci_core_vcn.this.id
@@ -83,6 +96,7 @@ resource "oci_core_subnet" "private" {
   display_name               = "${var.cluster_name}-private"
   dns_label                  = "private"
   route_table_id             = oci_core_route_table.private.id
+  security_list_ids          = [oci_core_security_list.private.id]
   prohibit_public_ip_on_vnic = true
 }
 

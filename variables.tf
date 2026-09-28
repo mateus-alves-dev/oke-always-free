@@ -9,7 +9,7 @@ variable "compartment_ocid" {
 }
 
 variable "region" {
-  description = "Região OCI. us-ashburn-1 e us-phoenix-1 costumam ter mais capacidade A1.Flex."
+  description = "Região home da tenancy OCI; recursos Always Free da stack dependem dela."
   type        = string
   default     = "us-ashburn-1"
 }
@@ -51,31 +51,47 @@ variable "private_subnet_cidr" {
 }
 
 variable "api_allowed_cidrs" {
-  description = "CIDRs autorizados a falar com o Kubernetes API endpoint na porta 6443. Default permite tudo."
+  description = "CIDRs públicos autorizados a acessar a API Kubernetes e as sessões do Bastion. Configure seu IP público /32."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "node_count" {
-  description = "Número de worker nodes. Always Free permite até 4 OCPU + 24 GB total em A1.Flex."
+  description = "Número de worker nodes. A cota A1 Always Free é de 2 OCPU e 12 GB no total."
   type        = number
   default     = 2
 }
 
 variable "node_ocpus" {
-  description = "OCPUs por node. 2 nodes × 2 OCPU = 4 OCPU (limite Always Free)."
+  description = "OCPUs por node. 2 nodes × 1 OCPU = 2 OCPU no total."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_memory_gb" {
-  description = "Memória (GB) por node. 2 nodes × 12 GB = 24 GB (limite Always Free)."
+  description = "Memória (GB) por node. 2 nodes × 6 GB = 12 GB no total."
   type        = number
-  default     = 12
+  default     = 6
 }
 
 variable "boot_volume_size_gb" {
   description = "Tamanho do boot volume por node (GB). 2 × 50 = 100 GB, dentro dos 200 GB grátis."
   type        = number
   default     = 50
+}
+
+variable "mysql_admin_username" {
+  description = "Usuário administrador do MySQL HeatWave."
+  type        = string
+  default     = "admin"
+}
+
+variable "billing_alert_email" {
+  description = "E-mail que receberá os alertas de gasto mensal da tenancy."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.billing_alert_email))
+    error_message = "Informe um endereço de e-mail válido em billing_alert_email."
+  }
 }
