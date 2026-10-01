@@ -33,6 +33,11 @@ output "mysql_ip" {
   value       = oci_mysql_mysql_db_system.this.ip_address
 }
 
+output "mysql_admin_username" {
+  description = "Usuário administrador do MySQL (usado por aplicações e pelo túnel do Bastion)."
+  value       = var.mysql_admin_username
+}
+
 output "mysql_heatwave_state" {
   description = "Estado do nó HeatWave Always Free."
   value       = oci_mysql_heat_wave_cluster.this.state

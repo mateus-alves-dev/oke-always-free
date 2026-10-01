@@ -70,6 +70,10 @@ resource "oci_containerengine_node_pool" "workers" {
   node_config_details {
     size = var.node_count
 
+    # Quando a tenancy expõe mais de um AD, os nodes são distribuídos entre eles.
+    # Nesta tenancy só existe FNGF:SA-SAOPAULO-1-AD-1, então as duas entradas
+    # apontam para o mesmo AD e o OKE mantém um único placement config; não há
+    # outro AD para tentar quando falta capacidade A1 — apenas repetir depois.
     placement_configs {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.private.id

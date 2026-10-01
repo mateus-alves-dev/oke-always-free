@@ -68,6 +68,13 @@ resource "oci_core_route_table" "private" {
 
 # A subnet privada não herda a lista padrão da VCN (que permite SSH público).
 # As entradas necessárias aos workers e ao MySQL ficam nos respectivos NSGs.
+#
+# O OCI CCM (securityListManagementMode padrão `All`) também acrescenta regras
+# de ingresso nesta lista para o tráfego do LoadBalancer até os NodePorts do
+# Traefik e para a porta 10256 do kube-proxy, sempre com origem no CIDR da
+# subnet pública. Essas regras são criadas fora do Terraform: sem o
+# ignore_changes abaixo cada `apply` as removeria e o CCM as recriaria, gerando
+# diferença permanente no plano.
 resource "oci_core_security_list" "private" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.this.id
@@ -76,6 +83,10 @@ resource "oci_core_security_list" "private" {
   egress_security_rules {
     protocol    = "all"
     destination = "0.0.0.0/0"
+  }
+
+  lifecycle {
+    ignore_changes = [ingress_security_rules]
   }
 }
 
@@ -179,12 +190,15 @@ resource "oci_core_network_security_group_security_rule" "workers_ingress_pmtu_f
   }
 }
 
+# NodePorts usados pelo LoadBalancer do Traefik. Restrito ao CIDR da VCN: o LB
+# fica na subnet pública e os pods usam 10.244.0.0/16 (dentro do CIDR da VCN),
+# então nenhum tráfego de fora da VCN chega aos workers, que não têm IP público.
 resource "oci_core_network_security_group_security_rule" "workers_ingress_nodeport" {
   network_security_group_id = oci_core_network_security_group.workers.id
   direction                 = "INGRESS"
   protocol                  = "6" # TCP
   source_type               = "CIDR_BLOCK"
-  source                    = "0.0.0.0/0"
+  source                    = var.vcn_cidr
 
   tcp_options {
     destination_port_range {

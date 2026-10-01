@@ -11,6 +11,7 @@ Esta stack provisiona um cluster **OKE Basic** e serviços auxiliares na região
 | Object Storage | 1 bucket privado Standard, sem versionamento; quota de 10 GB na tenancy | 20 GB combinados na conta somente Always Free; 10 GB Standard em conta paga/avaliação |
 | Vault | 1 vault `DEFAULT`, 1 chave `SOFTWARE` e 1 segredo | Chaves de software gratuitas e 150 segredos |
 | Bastion | 1 Bastion padrão, sessões temporárias | Serviço gratuito |
+| Load Balancer | 1 LB flexível de 10 Mbps, criado pelo Traefik | 1 LB flexível a 10 Mbps |
 
 ## Alertas de cobrança
 
@@ -52,21 +53,58 @@ Antes de mudar `kubernetes_version`, confirme a imagem OKE ARM correspondente em
 
 ## Acesso ao MySQL
 
-O endpoint do MySQL tem **somente IP privado**. A subnet privada não herda as regras de entrada da lista padrão da VCN. O NSG do banco aceita TCP/3306 apenas do NSG dos workers e do IP privado do Bastion. A porta MySQL X Protocol (33060) não está liberada. Uma política IAM específica permite que o próprio serviço MySQL associe seu VNIC a esse NSG.
+O endpoint do MySQL tem **somente IP privado**. A subnet privada não herda as regras de entrada da lista padrão da VCN. O NSG do banco aceita TCP/3306 apenas do NSG dos workers (pods do cluster) e do IP privado do Bastion. A porta MySQL X Protocol (33060) não está liberada. Uma política IAM específica permite que o próprio serviço MySQL associe seu VNIC a esse NSG.
 
-Aplicações no cluster usam `terraform output -raw mysql_ip` na porta 3306. O Terraform cria o segredo no Vault, mas não o injeta em pods; configure a leitura do segredo e as permissões IAM da aplicação conforme seu método de implantação.
-
-Para administrar o banco de fora da VCN, crie uma sessão de **port forwarding** no Bastion para o IP retornado por `mysql_ip` e a porta 3306. Pela OCI CLI:
+A senha do administrador é gerada pelo Terraform, guardada no Vault e pode ser lida pela CLI — nunca a coloque no repositório:
 
 ```bash
-oci bastion session create-port-forwarding \
-  --bastion-id "$(terraform output -raw bastion_id)" \
-  --target-private-ip "$(terraform output -raw mysql_ip)" \
-  --target-port 3306 \
-  --ssh-public-key-file ~/.ssh/id_ed25519.pub
+oci secrets secret-bundle get \
+  --secret-id "$(terraform output -raw mysql_admin_secret_id)" \
+  --query 'data."secret-bundle-content".content' --raw-output | base64 -d
 ```
 
-Depois, copie o comando SSH da sessão na Console OCI e conecte o cliente MySQL a `127.0.0.1` na porta local escolhida. O IP público do seu computador deve constar em `api_allowed_cidrs`.
+### Pelo cluster
+
+O NSG dos workers já autoriza a porta 3306, então qualquer pod acessa o banco pelo IP privado (`terraform output -raw mysql_ip`). O exemplo abaixo cria o Secret, roda um Job com o cliente MySQL e mostra a versão do servidor:
+
+```bash
+kubectl create secret generic mysql-app-credentials \
+  --from-literal=MYSQL_HOST="$(terraform output -raw mysql_ip)" \
+  --from-literal=MYSQL_USER="$(terraform output -raw mysql_admin_username)" \
+  --from-literal=MYSQL_PASSWORD="$(oci secrets secret-bundle get \
+    --secret-id "$(terraform output -raw mysql_admin_secret_id)" \
+    --query 'data."secret-bundle-content".content' --raw-output | base64 -d)"
+
+kubectl apply -f k8s/apps/mysql-client.yaml
+kubectl logs job/mysql-check      # imprime versão do servidor, usuário e host
+kubectl delete job mysql-check
+```
+
+O Job usa a imagem oficial `mysql` (multi-arch, com build `linux/arm64`) e serve de modelo para as aplicações. Prefira criar um usuário MySQL por aplicação em vez de reutilizar o administrador. O Terraform não injeta o segredo em pods; a distribuição das credenciais é responsabilidade do seu fluxo de deploy.
+
+### Pelo Bastion
+
+Para administrar o banco de fora da VCN, crie uma sessão de **port forwarding** no Bastion (serviço gratuito, não consome cota Always Free) e conecte o cliente MySQL a `127.0.0.1`. O IP público do seu computador deve constar em `api_allowed_cidrs`.
+
+```bash
+# 1. cria a sessão e imprime o OCID dela (é o usuário da conexão SSH)
+oci bastion session create-port-forwarding \
+  --bastion-id "$(terraform output -raw bastion_id)" \
+  --display-name admin-mysql --key-type PUB \
+  --ssh-public-key-file ~/.ssh/id_ed25519.pub \
+  --target-private-ip "$(terraform output -raw mysql_ip)" \
+  --target-port 3306 --session-ttl 1800 \
+  --query 'data.id' --raw-output
+
+# 2. abre o túnel; a sessão leva alguns segundos para ficar ACTIVE (mantenha o terminal aberto)
+ssh -i ~/.ssh/id_ed25519 -N -L 13306:$(terraform output -raw mysql_ip):3306 \
+  <ocid-da-sessao>@host.bastion.<sua-regiao>.oci.oraclecloud.com
+
+# 3. em outro terminal
+mysql --host=127.0.0.1 --port=13306 --user="$(terraform output -raw mysql_admin_username)" -p
+```
+
+Sem `--wait-for-state` a CLI devolve a própria sessão; com ele, devolve o work request. A sessão expira sozinha no TTL (máximo de 3 horas) e pode ser encerrada antes com `oci bastion session delete --session-id <ocid> --force`.
 
 ## Object Storage e backups
 
@@ -76,18 +114,46 @@ O MySQL Always Free mantém backup automático com retenção de um dia. Para re
 
 O estado remoto em Object Storage é opcional. O exemplo de backend S3 em `versions.tf` permanece comentado; ativá-lo requer credenciais compatíveis, namespace e `terraform init -migrate-state`. Ele compartilha a quota do bucket de backups.
 
-## Load Balancer e custos
+## Load Balancer e aplicações
 
-O cluster não cria um Load Balancer até que um `Service` Kubernetes do tipo `LoadBalancer` seja implantado. A Oracle oferece **um** LB Flexível Always Free a 10 Mbps. Configure as anotações abaixo no único serviço de entrada; o padrão do OKE pode ser de 100 Mbps e exceder o Always Free:
+O cluster tem **um único Load Balancer**, criado pelo OCI CCM para o `Service` do Traefik — o controlador de entrada que atende todas as aplicações por roteamento de host. As anotações que mantêm o LB no Always Free (flexível, 10 Mbps) ficam em `k8s/traefik-values.yaml`; sem elas o padrão do OKE é 100 Mbps e sai da franquia.
 
-```yaml
-metadata:
-  annotations:
-    oci.oraclecloud.com/load-balancer-type: "lb"
-    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
-    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
-    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+O Traefik foi escolhido porque o `ingress-nginx` foi aposentado em março de 2026 e não recebe mais correções de segurança.
+
+```bash
+helm repo add traefik https://traefik.github.io/charts
+helm repo update traefik
+helm upgrade --install traefik traefik/traefik \
+  --namespace traefik --create-namespace \
+  --version 41.6.1 -f k8s/traefik-values.yaml
+
+kubectl get svc traefik -n traefik   # EXTERNAL-IP é o IP público do LB
 ```
+
+Cada aplicação é publicada por um `Ingress`. Aponte o DNS de cada domínio para o IP do LB antes de testar:
+
+```bash
+kubectl apply -f k8s/apps/   # exemplos hello-oke e whoami
+kubectl get ingress
+```
+
+O Traefik é a IngressClass padrão e está no namespace `traefik`; o dashboard não é exposto no LB (use `kubectl port-forward -n traefik svc/traefik 8080:8080` e acesse `http://localhost:8080/dashboard`).
+
+Para publicar uma nova aplicação, crie Deployment + `Service` do tipo **ClusterIP** + `Ingress` com `host: seu.dominio`. Os arquivos em `k8s/apps/` servem de modelo.
+
+O OCI CCM também cria regras de ingresso na security list da subnet privada (NodePorts do Traefik e porta 10256 do kube-proxy, com origem no CIDR do LoadBalancer). Por isso `oci_core_security_list.private` declara `ignore_changes = [ingress_security_rules]`: sem isso, cada `terraform apply` removeria essas regras e o CCM as recriaria logo depois.
+
+Para conferir que o LB continua dentro da franquia (um único LB flexível de 10 Mbps):
+
+```bash
+./scripts/check-load-balancers.sh
+```
+
+Avisos de custo:
+
+- **Nunca crie um segundo `Service` do tipo `LoadBalancer`.** Um segundo LB sai da franquia e ainda divide o roteamento por host entre dois IPs.
+- HTTPS não está configurado: o Traefik responde na porta 443 com certificado próprio. Para certificados válidos (Let's Encrypt), instale o cert-manager; isso exige um domínio real apontando para o LB.
+- A banda de 10 Mbps do LB é compartilhada por todas as aplicações.
 
 Use imagens de contêiner `linux/arm64` nos workers A1. Instâncias A1 inativas podem ser recuperadas pela Oracle com base em métricas de CPU, rede e memória; a simples presença de um pod não impede isso. Consulte a [política de recuperação](https://docs.oracle.com/pt-br/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
 

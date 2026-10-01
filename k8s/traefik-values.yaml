@@ -1,0 +1,44 @@
+# Traefik é o único controlador de entrada do cluster: todas as aplicações são
+# expostas por recursos Ingress roteados por host, e o único Load Balancer
+# Always Free (flexível, 10 Mbps) é criado pelo OCI CCM para o Service deste
+# chart. Nenhuma outra aplicação deve usar `type: LoadBalancer` — um segundo
+# Service desse tipo cria um segundo LB e sai da franquia.
+#
+# Instalação/atualização:
+#   helm repo add traefik https://traefik.github.io/charts
+#   helm repo update traefik
+#   helm upgrade --install traefik traefik/traefik \
+#     --namespace traefik --create-namespace \
+#     --version 41.6.1 -f k8s/traefik-values.yaml
+
+deployment:
+  # 1 réplica cabe com folga nos 2 workers A1; o LB aponta para o NodePort dela.
+  replicas: 1
+
+ingressClass:
+  enabled: true
+  # Ingress sem `ingressClassName` usa o Traefik automaticamente.
+  isDefaultClass: true
+
+ingressRoute:
+  dashboard:
+    # Dashboard não exposto no LB; acesso só por kubectl port-forward.
+    enabled: false
+
+api:
+  dashboard: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 300m
+    memory: 512Mi
+
+service:
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: "lb"
+    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"

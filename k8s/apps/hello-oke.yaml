@@ -1,0 +1,66 @@
+# App de exemplo: aponte o DNS de `app1.example.com` para o IP do LB e troque
+# o host abaixo pelo domínio real. Sem `ingressClassName`: o Traefik é a
+# IngressClass padrão do cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-oke
+  labels:
+    app: hello-oke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-oke
+  template:
+    metadata:
+      labels:
+        app: hello-oke
+    spec:
+      containers:
+        - name: hello-oke
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-oke
+  labels:
+    app: hello-oke
+spec:
+  type: ClusterIP
+  selector:
+    app: hello-oke
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-oke
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: app1.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-oke
+                port:
+                  name: http

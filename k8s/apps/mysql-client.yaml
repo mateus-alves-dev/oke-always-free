@@ -1,0 +1,59 @@
+# Exemplo de acesso ao MySQL HeatWave a partir de um pod do cluster.
+#
+# O banco tem apenas IP privado e o NSG do MySQL aceita TCP/3306 somente dos
+# worker nodes (NSG dos workers) e do IP privado do Bastion. Por isso este Job
+# funciona no cluster e uma conexão direta da internet não funciona.
+#
+# Crie o Secret `mysql-app-credentials` antes de aplicar — o endpoint vem do
+# Terraform e a senha do Vault, nunca do repositório. Os comandos estão em
+# README.md › "Acesso ao MySQL".
+#
+# Depois: kubectl apply -f k8s/apps/mysql-client.yaml && kubectl logs job/mysql-check
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-check
+  labels:
+    app: mysql-check
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: mysql-check
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mysql-client
+          # Imagem oficial multi-arch: há build linux/arm64 para os workers A1.
+          image: docker.io/library/mysql:8.4
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mysql --protocol=TCP --host="$MYSQL_HOST" --user="$MYSQL_USER" \
+                --ssl-mode=PREFERRED \
+                -e "SELECT VERSION() AS versao, CURRENT_USER() AS usuario, @@hostname AS host;"
+          env:
+            - name: MYSQL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-app-credentials
+                  key: MYSQL_HOST
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-app-credentials
+                  key: MYSQL_USER
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-app-credentials
+                  key: MYSQL_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
