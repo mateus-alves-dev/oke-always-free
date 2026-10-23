@@ -1,0 +1,101 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "monitoring.coreos.com/v1alpha1",
+      "kind": "AlertmanagerConfig",
+      "metadata": {
+        "name": "autovitrine",
+        "namespace": "autocommerce",
+        "labels": {
+          "app": "autocommerce"
+        }
+      },
+      "spec": {
+        "route": {
+          "receiver": "autovitrine-email",
+          "groupBy": [
+            "alertname"
+          ],
+          "groupWait": "10s",
+          "groupInterval": "30s",
+          "repeatInterval": "12h",
+          "matchers": [
+            {
+              "name": "service",
+              "value": "autovitrine",
+              "matchType": "="
+            }
+          ]
+        },
+        "receivers": [
+          {
+            "name": "autovitrine-email",
+            "emailConfigs": [
+              {
+                "to": "mateus.silva@skillo.tech",
+                "from": "AutoVitrine <no-reply@autovitrine.store>",
+                "smarthost": "smtp.resend.com:465",
+                "authUsername": "resend",
+                "authPassword": {
+                  "name": "autovitrine-alert-email",
+                  "key": "password"
+                },
+                "requireTLS": true,
+                "forceImplicitTLS": true,
+                "sendResolved": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "monitoring.coreos.com/v1",
+      "kind": "PrometheusRule",
+      "metadata": {
+        "name": "autovitrine",
+        "namespace": "autocommerce",
+        "labels": {
+          "release": "kube-prometheus-stack"
+        }
+      },
+      "spec": {
+        "groups": [
+          {
+            "name": "autovitrine",
+            "rules": [
+              {
+                "alert": "AutoVitrineUnavailable",
+                "expr": "kube_deployment_status_replicas_available{namespace=\"autocommerce\",deployment=\"autocommerce\"} < 1",
+                "for": "2m",
+                "labels": {
+                  "service": "autovitrine",
+                  "severity": "critical"
+                },
+                "annotations": {
+                  "summary": "AutoVitrine sem réplica disponível",
+                  "description": "Conferir rollout, readiness, PostgreSQL e Redis no namespace autocommerce."
+                }
+              },
+              {
+                "alert": "AutoVitrineBillingWorkerStale",
+                "expr": "(time() - kube_cronjob_status_last_successful_time{namespace=\"autocommerce\",cronjob=\"autocommerce-billing-live\"} > 300) or absent(kube_cronjob_status_last_successful_time{namespace=\"autocommerce\",cronjob=\"autocommerce-billing-live\"})",
+                "for": "3m",
+                "labels": {
+                  "service": "autovitrine",
+                  "severity": "critical"
+                },
+                "annotations": {
+                  "summary": "Reconciliação Stripe sem execução recente",
+                  "description": "Worker live sem sucesso por mais de cinco minutos; verificar CronJob e eventos BILLING_*_RETRY. Não desligar webhooks ou apagar contratos."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
