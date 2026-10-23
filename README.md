@@ -40,7 +40,7 @@ export KUBECONFIG=$(terraform output -raw kubeconfig_path)
 kubectl get nodes
 ```
 
-`terraform.tfvars`, `terraform.tfstate` e `kubeconfig` são locais e ignorados pelo Git. A senha do administrador MySQL é gerada pelo Terraform, salva no Vault e **também permanece no estado do Terraform**; proteja esse arquivo ou use um backend remoto privado.
+`terraform.tfvars`, `terraform.tfstate`, `kubeconfig` e `kubeconfig-private` são locais e ignorados pelo Git. A senha do administrador MySQL é gerada pelo Terraform, salva no Vault e **também permanece no estado do Terraform**; proteja esse arquivo ou use um backend remoto privado.
 
 Para listar as versões Kubernetes disponíveis:
 
@@ -49,7 +49,24 @@ oci ce cluster-options get --cluster-option-id all \
   --query 'data."kubernetes-versions"' --raw-output
 ```
 
-Antes de mudar `kubernetes_version`, confirme a imagem OKE ARM correspondente em `oci ce node-pool-options get --node-pool-option-id all`. As imagens dos workers são obtidas dessa lista de opções do OKE.
+Antes de mudar a versão dos workers, confirme a imagem OKE ARM correspondente em `oci ce node-pool-options get --node-pool-option-id all`. As imagens dos workers são obtidas dessa lista de opções do OKE. Se o control plane for atualizado separadamente, defina `kubernetes_version` com a versão atual dele e `node_pool_kubernetes_version` com a versão atual dos workers até planejar a atualização dos nós.
+
+Para o acesso público inicial ou de emergência, se `kubectl` parar de conectar por timeout, confira o IP público atual com `curl -4 https://api.ipify.org`. Atualize `api_allowed_cidrs` em `terraform.tfvars` para esse IP com `/32`, execute `terraform plan` e `terraform apply`, e recarregue o kubeconfig com `export KUBECONFIG=$(terraform output -raw kubeconfig_path)`. Esse kubeconfig usa o endpoint público do cluster.
+
+## Acesso privado com Cloudflare Zero Trust
+
+Para administrar o cluster e o MySQL sem atualizar seu IP dinâmico, configure o [guia do Cloudflare Tunnel e WARP](k8s/cloudflare/README.md). O WARP no computador conecta a um túnel com duas réplicas de `cloudflared` nos workers existentes. As únicas rotas privadas são os IPs `/32` da API OKE e do MySQL, com políticas por usuário e porta no Gateway.
+
+Após configurar o painel, implantar o túnel e conectar o WARP:
+
+```bash
+export KUBECONFIG="$(terraform output -raw kubeconfig_private_path)"
+kubectl get nodes
+mysql --protocol=TCP --host="$(terraform output -raw mysql_ip)" --port=3306 \
+  --user="$(terraform output -raw mysql_admin_username)" --ssl-mode=REQUIRED -p
+```
+
+O Terraform gera os dois kubeconfigs com permissão `0600`. O público continua restrito a `api_allowed_cidrs` para recuperação. O túnel não cria VM, volume, Ingress ou LoadBalancer; as regras atuais dos NSGs já permitem que os workers alcancem a API e o banco. Autenticação OCI/RBAC e credenciais MySQL continuam obrigatórias. O token do túnel é criado separadamente em um Secret Kubernetes e não passa pelo Terraform.
 
 ## Acesso ao MySQL
 

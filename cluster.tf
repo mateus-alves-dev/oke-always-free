@@ -9,10 +9,11 @@ data "oci_containerengine_node_pool_option" "oke_arm" {
 locals {
   # As imagens OKE aparecem nas opções do node pool, mas nem sempre em core_images.
   # Ex.: Oracle-Linux-9.8-aarch64-2026.08.14-0-OKE-1.36.1-1699
+  node_pool_kubernetes_version = coalesce(var.node_pool_kubernetes_version, var.kubernetes_version)
   oke_arm_images = {
     for source in data.oci_containerengine_node_pool_option.oke_arm.sources :
     source.source_name => source.image_id
-    if length(regexall("^Oracle-Linux-[0-9.]+-aarch64-[0-9.]+-[0-9]+-OKE-${replace(trimprefix(var.kubernetes_version, "v"), ".", "\\.")}-[0-9]+$", source.source_name)) > 0
+    if length(regexall("^Oracle-Linux-[0-9.]+-aarch64-[0-9.]+-[0-9]+-OKE-${replace(trimprefix(local.node_pool_kubernetes_version, "v"), ".", "\\.")}-[0-9]+$", source.source_name)) > 0
   }
   latest_oke_arm_image_name = try(reverse(sort(keys(local.oke_arm_images)))[0], "")
 }
@@ -52,7 +53,7 @@ resource "oci_containerengine_cluster" "this" {
 resource "oci_containerengine_node_pool" "workers" {
   cluster_id         = oci_containerengine_cluster.this.id
   compartment_id     = var.compartment_ocid
-  kubernetes_version = var.kubernetes_version
+  kubernetes_version = local.node_pool_kubernetes_version
   name               = "${var.cluster_name}-np"
   node_shape         = "VM.Standard.A1.Flex"
 

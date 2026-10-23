@@ -15,9 +15,15 @@ variable "region" {
 }
 
 variable "kubernetes_version" {
-  description = "Versão do Kubernetes. Confirmar disponibilidade: oci ce cluster-options get --cluster-option-id all"
+  description = "Versão do control plane Kubernetes. Confirmar disponibilidade: oci ce cluster-options get --cluster-option-id all"
   type        = string
   default     = "v1.36.1"
+}
+
+variable "node_pool_kubernetes_version" {
+  description = "Versão dos workers. Se omitida, usa kubernetes_version."
+  type        = string
+  default     = null
 }
 
 variable "cluster_name" {

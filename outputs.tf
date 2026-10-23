@@ -3,6 +3,11 @@ output "kubeconfig_path" {
   value       = local_file.kubeconfig.filename
 }
 
+output "kubeconfig_private_path" {
+  description = "Kubeconfig privado para acesso via WARP. Use: export KUBECONFIG=$(terraform output -raw kubeconfig_private_path)"
+  value       = local_file.kubeconfig_private.filename
+}
+
 output "cluster_id" {
   description = "OCID do cluster OKE."
   value       = oci_containerengine_cluster.this.id
@@ -11,6 +16,11 @@ output "cluster_id" {
 output "cluster_endpoint" {
   description = "Endpoint público do Kubernetes API."
   value       = oci_containerengine_cluster.this.endpoints[0].public_endpoint
+}
+
+output "cluster_private_endpoint" {
+  description = "Endpoint privado da API Kubernetes (IP:porta); cadastre o IP como rota /32 no Cloudflare Tunnel."
+  value       = oci_containerengine_cluster.this.endpoints[0].private_endpoint
 }
 
 output "node_pool_id" {

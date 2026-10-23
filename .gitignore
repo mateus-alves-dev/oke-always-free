@@ -8,6 +8,8 @@ crash.*.log
 terraform.tfvars
 *.auto.tfvars
 kubeconfig
+kubeconfig-public
+kubeconfig-private
 
 override.tf
 override.tf.json
